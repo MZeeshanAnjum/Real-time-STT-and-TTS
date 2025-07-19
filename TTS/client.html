@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FastRTC TTS Test Client</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    #log { background: #eee; padding: 10px; margin-top: 1em; max-width: 800px; min-height: 2em;}
+  </style>
+</head>
+<body>
+  <input id="ttsText" type="text" placeholder="Enter text to speak" size="50" />
+  <button id="start">▶ Start TTS</button>
+  <h2>🔈 Audio Playback:</h2>
+  <div id="log"></div>
+
+  <script>
+    const SAMPLE_RATE = 44100; 
+    const ws = new WebSocket("ws://localhost/rtc/tts/websocket/offer");
+
+    let audioCtx = null;
+    let nextStartTime = 0;
+    let isReady = false;
+
+    // Stopwatch state
+    let chunkCount = 0;
+    let timeTextSent = null;
+
+    function pad(n) { return (n<10?'0':'')+n; }
+    function msToTime(ms) {
+      let s = Math.floor(ms/1000);
+      let m = Math.floor(s/60);
+      s = s%60;
+      let cent = Math.floor(ms%1000/10);
+      return `${pad(m)}:${pad(s)}.${pad(cent)}`;
+    }
+    function log(msg) {
+      document.getElementById("log").innerHTML += msg + "<br/>";
+      document.getElementById("log").scrollTop = 1e6;
+      console.log(msg);
+    }
+
+    async function ensureAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+      }
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
+    }
+
+    async function playAudioChunk(float32) {
+      const buffer = audioCtx.createBuffer(1, float32.length, SAMPLE_RATE);
+      buffer.copyToChannel(float32, 0);
+
+      const sourceNode = audioCtx.createBufferSource();
+      sourceNode.buffer = buffer;
+      sourceNode.connect(audioCtx.destination);
+
+      const now = audioCtx.currentTime;
+      if (nextStartTime < now) nextStartTime = now;
+
+      sourceNode.start(nextStartTime);
+      nextStartTime += buffer.duration;
+    }
+
+    ws.onopen = () => {
+      console.log("✅ WebSocket connected");
+      ws.send(JSON.stringify({
+        event: "start",
+        websocket_id: "test-client"
+      }));
+      isReady = true;
+    };
+
+    ws.onmessage = async (event) => {
+      const data = JSON.parse(event.data);
+      if (data.event === "media") {
+
+        // ----- Timing logic -----
+        const now = performance.now();
+        if (!timeTextSent) {
+          // fallback, shouldn't normally happen
+          timeTextSent = now;
+        }
+        chunkCount++;
+        let delta = now - timeTextSent;
+        log(`🎧 Chunk #${chunkCount} at ${msToTime(delta)}`);
+
+        // ---- μ-law decoding and playback as before ----
+        const payload = data.media.payload;
+        const binary = atob(payload);
+        const mulawBytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          mulawBytes[i] = binary.charCodeAt(i);
+        }
+
+        const float32 = new Float32Array(mulawBytes.length);
+        for (let i = 0; i < mulawBytes.length; i++) {
+          let u = mulawBytes[i] ^ 0xFF;
+          let t = ((u & 0x0F) << 3) + 132;
+          t <<= (u & 0x70) >> 4;
+          t = (u & 0x80) ? 132 - t : t - 132;
+          float32[i] = t / 32768;
+        }
+
+        await ensureAudioContext();
+        await playAudioChunk(float32);
+      }
+    };
+
+    document.getElementById("start").onclick = async () => {
+      const text = document.getElementById("ttsText").value.trim();
+      if (!text) return;
+
+      await ensureAudioContext();
+
+      // ---- Reset timing for each new TTS request ----
+      chunkCount = 0;
+      timeTextSent = performance.now();
+
+      if (ws.readyState === WebSocket.OPEN && isReady) {
+        ws.send(JSON.stringify({
+          event: "text",
+          media: { payload: text }
+        }));
+      } else {
+        console.error("❌ WebSocket not ready yet");
+      }
+    };
+  </script>
+</body>
+</html>
