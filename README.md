@@ -33,7 +33,7 @@ To activate the new features, **replace the following files** inside your Python
 
 1. Locate this path:
     ```
-    .venv/lib/python<version>/site-packages/fastrtc/tts/websockets.py
+    .venv/lib/python<version>/site-packages/fastrtc/websockets.py
     ```
 
     Replace `<version>` with your Python version, e.g., `python3.10`.
@@ -52,7 +52,7 @@ To activate the new features, **replace the following files** inside your Python
 
 1. Go to:
     ```
-    .venv/lib/python<version>/site-packages/fastrtc/stt/tracks.py
+    .venv/lib/python<version>/site-packages/fastrtc/tracks.py
     ```
 
 ---
@@ -63,7 +63,7 @@ To activate the new features, **replace the following files** inside your Python
 
 1. Go to:
     ```
-    .venv/lib/python<version>/site-packages/fastrtc/stt/websockets.py
+    .venv/lib/python<version>/site-packages/fastrtc/websockets.py
     ```
 
 2. Replace the file with the updated version that:
